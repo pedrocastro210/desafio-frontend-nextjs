@@ -1,99 +1,115 @@
-# Desafio Técnico — Desenvolvedor(a) Frontend (Next.js)
+# Inbox de Atendimento WhatsApp com IA — Frontend
 
-> **Inbox de Atendimento WhatsApp com IA** — construa a interface; o backend já está pronto.
-
-Bem-vindo(a)! Neste desafio você vai construir o **frontend** de um painel de atendimento via
-WhatsApp, parecido com o que usamos no dia a dia. **O backend já está implementado e hospedado**
-— você foca 100% na experiência, na arquitetura de componentes e nas decisões de frontend.
-
-Não buscamos pixel-perfect. Buscamos entender **como você pensa** em Next.js: o que é Server
-e o que é Client Component, como busca e sincroniza dados, como trata estados de carregamento
-e erro, e como organiza o código.
+Este é o frontend de um painel de atendimento via WhatsApp integrado a um assistente de Inteligência Artificial, desenvolvido como solução para o desafio técnico. O projeto foi construído utilizando **Next.js 15 (App Router)**, **TypeScript**, **Tailwind CSS v4** e **TanStack Query v5**.
 
 ---
 
-## 🎯 O que você vai construir
+## 🚀 Como Executar o Projeto
 
-Um app **Next.js (App Router)** que consome a API fornecida e entrega:
+1. **Configurar variáveis de ambiente**:
+   Copie o arquivo `.env.example` para `.env.local` e configure a URL da API (o valor padrão já aponta para a API hospedada em produção):
+   ```bash
+   cp .env.example .env.local
+   ```
 
-1. **Lista de conversas** — contato, última mensagem, horário, indicador de não-lidas, busca/filtro.
-2. **Tela de chat** — histórico de mensagens (bolhas separando cliente × atendente), timestamps.
-3. **Envio de mensagem** — com **atualização otimista** (a mensagem aparece antes da confirmação).
-4. **Sugerir resposta com IA** — botão que chama `/ai/suggest` e preenche o campo com a sugestão
-   (o backend faz o proxy da OpenAI; a chave nunca chega ao browser).
-5. **Estados** — loading, erro e vazio bem tratados; acessibilidade básica.
-6. **Atualização** — manter a lista e o chat atualizados (polling com React Query já é
-   suficiente; soluções melhores são diferencial — explique sua escolha).
+2. **Instalar dependências**:
+   ```bash
+   npm install
+   ```
 
----
+3. **Executar em modo de desenvolvimento**:
+   ```bash
+   npm run dev
+   ```
+   Abra [http://localhost:3000](http://localhost:3000) no seu navegador para ver o painel.
 
-## 🔌 Backend fornecido
+4. **Gerar build de produção**:
+   ```bash
+   npm run build
+   ```
 
-Você **não precisa** implementar nem rodar o backend — ele já está no ar.
-
-**URL da API (já configurada para você):**
-
-```
-NEXT_PUBLIC_API_URL=https://8tymn68hp9.execute-api.us-east-1.amazonaws.com
-```
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/me` | Perfil do atendente logado |
-| GET | `/conversations` | Lista de conversas |
-| GET | `/conversations/:id/messages` | Mensagens de uma conversa |
-| POST | `/conversations/:id/messages` | Envia mensagem `{ text }` |
-| POST | `/ai/suggest` | Sugestão da IA `{ conversationId }` |
-
-O cliente HTTP e os tipos já vêm prontos em [`lib/api.ts`](lib/api.ts). Se preferir rodar o
-backend localmente (offline), veja [`server/README.md`](server/README.md).
+5. **Executar testes**:
+   ```bash
+   npm test
+   ```
 
 ---
 
-## 🚀 Como começar
+## 🏗️ Decisões de Arquitetura
 
-```bash
-# 1. Configure a URL da API (já vem preenchida com a URL hospedada)
-cp .env.example .env.local
+Resumo das principais escolhas. Para a documentação completa (stack, hooks, workarounds do backend, SSE, virtualização e testes), consulte **[architectural_decisions.md](./architectural_decisions.md)**.
 
-# 2. Instale e rode
-npm install
-npm run dev          # http://localhost:3000
-```
+### Separação de Responsabilidades
 
-Abra <http://localhost:3000> — a página inicial faz uma **verificação de conexão** com a API.
-Se aparecer "✓ Conectado", está tudo pronto para você construir.
+- **Custom Hooks** concentram toda a lógica de API e cache: `use-me`, `use-conversations`, `use-messages`, `use-mock-message`.
+- **Componentes visuais** apenas renderizam UI, organizados por domínio (`components/sidebar`, `components/chat`, `components/ui`).
+- **Utilitários puros** em `lib/utils.ts` (formatação de datas, telefone, parsing de mídia) com cobertura de testes.
 
-> O que já entregamos: projeto Next.js configurado (App Router, Tailwind, React Query, Axios),
-> `lib/api.ts` tipado e um exemplo mínimo de chamada. **As telas são por sua conta.**
+### Server vs Client Components
+
+A página principal (`app/page.tsx`) é um **async Server Component** que:
+1. Faz **prefetch** de `/me` e `/conversations` no servidor via `fetch` (`lib/api-server.ts`).
+2. **Desidrata** o cache com `HydrationBoundary` — a UI renderiza sem skeleton na primeira pintura.
+3. Compõe **ilhas client** (`InboxWorkspace`) apenas onde há estado e interatividade.
+
+Componentes estáticos renderizados no servidor (zero JS no cliente):
+- `ConnectionStatus` / `ConnectionError` — banner de conexão no HTML inicial.
+- `ChatEmptyState` — estado vazio do painel de chat.
+- `app/loading.tsx` — skeleton exibido pelo Suspense durante o prefetch.
+
+O `layout.tsx` permanece Server Component; `Providers` é client boundary para o QueryClient.
+
+### Sincronização de Dados
+
+1. **Polling (TanStack Query)** — intervalo de **5 segundos** para conversas e mensagens ativas, pausado em background (`refetchIntervalInBackground: false`).
+2. **Atualização otimista** — mensagem aparece instantaneamente com ícone de envio; substituída pela confirmação da API; rollback em caso de erro.
+3. **Merge inteligente** — `structuralSharing` preserva mensagens transientes (`optimistic-`, `mock-`, `realtime-`) sem duplicar após confirmação do servidor.
+
+### UX & Acessibilidade
+
+- Layout responsivo (mobile: lista → chat fullscreen; desktop: split-screen).
+- Estados de loading (skeletons), erro (retry) e vazio em lista e chat.
+- `aria-label`, `aria-live` e `lang="pt-BR"`.
+- Enter para enviar, foco automático no input ao abrir conversa.
 
 ---
 
-## 📤 Entrega
+## 🚀 Funcionalidades Implementadas
 
-- Repositório Git com **histórico de commits real**.
-- `README.md` próprio: como rodar, decisões de arquitetura, o que faria diferente com mais tempo.
-- O app deve **buildar** (`npm run build`) sem erros.
+### Requisitos do desafio
+
+| Funcionalidade | Status |
+|----------------|--------|
+| Lista de conversas (contato, preview, horário, não-lidas) | ✅ |
+| Busca e filtro (Todos / Não lidas) | ✅ |
+| Chat com bolhas cliente × atendente e timestamps | ✅ |
+| Envio com atualização otimista | ✅ |
+| Sugestão de resposta com IA (`/ai/suggest`) | ✅ |
+| Polling com React Query | ✅ |
+
+### Diferenciais extras
+
+- **Mídias** — anexos (imagem, áudio, PDF) via Base64 em JSON; lightbox, player e download no `ChatBubble`.
+- **Simulação de mensagens** — botão Bot (`useMockMessage`) com indicador de digitando.
+- **Infraestrutura SSE** — rota `/api/realtime` + hook `useRealtime` implementados, prontos para ativação (hoje o mock manual está ativo na UI por ser mais previsível em demonstrações).
+- **VirtualList** — lista lateral virtualizada para performance com muitas conversas.
+- **Vitest** — testes em `lib/utils.test.ts`.
 
 ---
 
-## 🧮 Critérios de avaliação
+## 🔮 O que faria com mais tempo
 
-| Critério | Peso | O que olhamos |
-|----------|------|---------------|
-| Arquitetura de componentes | 25% | Composição, reuso, Server vs Client Components conscientes |
-| Data fetching & estado | 25% | React Query bem usado, cache/invalidação, sem waterfalls |
-| UX & estados | 20% | Loading/erro/vazio, update otimista, responsividade, acessibilidade |
-| Qualidade do código | 20% | Tipagem, organização, naming, legibilidade |
-| Capricho & detalhes | 10% | Aquilo que faz parecer um produto de verdade |
+1. **WebSocket ou SSE ativo** — conectar `useRealtime` na UI e desligar o polling quando houver conexão em tempo real, usando polling apenas como fallback.
+2. **Rota `PATCH /read` no backend** — eliminar o workaround de timestamps locais para não-lidas; hoje resolvemos no cliente com `useRef` + `select`.
+3. **Upload real de mídia** — substituir Base64 por presigned URLs (S3) quando o backend suportar multipart.
+4. **Testes de integração** — React Testing Library para hooks e fluxos críticos (envio otimista, busca, sugestão IA).
+5. **Acessibilidade avançada** — navegação completa por teclado na lista, `focus trap` no lightbox, contraste WCAG AA auditado.
+6. **Histórico infinito** — paginação cursor-based nas mensagens (`useInfiniteQuery`) para conversas longas.
+7. **Consolidar `useConversations`** — instância única via Context para evitar refs de leitura duplicados entre `page.tsx` e `ConversationList`.
 
 ---
 
-## 📋 Regras
+## 🔒 Segurança
 
-- **Prazo**: 5 dias corridos.
-- **Stack obrigatória**: Next.js (App Router) + TypeScript. UI à sua escolha (Tailwind já configurado;
-  pode usar shadcn/ui, etc.).
-- Pode usar IA como assistente — mas **você precisa entender e defender cada decisão** na entrevista.
-
-Boa sorte! 🚀
+- Chaves da OpenAI permanecem no backend; o frontend chama apenas `POST /ai/suggest`.
+- Inputs textuais renderizados pelo React sem `dangerouslySetInnerHTML`.
